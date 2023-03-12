@@ -62,7 +62,8 @@ public class OnlineCoursesAnalyzer {
     public Map<String, Integer> getPtcpCountByInst() {
 
         Map<String, Integer> rawMap = streamSupplier.get().collect(
-            Collectors.groupingBy(course::getInstitution, Collectors.summingInt(course::getParticipants)));
+            Collectors.groupingBy(course::getInstitution,
+                Collectors.summingInt(course::getParticipants)));
         // use TreeMap to initiate a treeMap, which sorted by natural order
         return new TreeMap<>(rawMap);
     }
@@ -73,7 +74,8 @@ public class OnlineCoursesAnalyzer {
             Collectors.groupingBy(c -> c.getInstitution() + "-" + c.getCourseSubject(),
                 Collectors.summingInt(course::getParticipants)));
         Map<String, Integer> result = new TreeMap<>((s1, s2) -> (Objects.equals(rawMap.get(s1),
-            rawMap.get(s2)))?s2.compareTo(s1):rawMap.get(s2) - rawMap.get(s1)); // descending order
+            rawMap.get(s2))) ? s2.compareTo(s1)
+            : rawMap.get(s2) - rawMap.get(s1)); // descending order
         result.putAll(rawMap);
         return result;
     }
@@ -132,14 +134,14 @@ public class OnlineCoursesAnalyzer {
         if (by.equals("hours")) {
             // descending
             return streamSupplier.get().sorted((c1, c2) -> {
-                    if (c1.getTotalCourseHours() - c2.getTotalCourseHours() > 0) {
-                        return -1;
-                    } else if (c1.getTotalCourseHours() == c2.getTotalCourseHours()) {
-                        return c1.getCourseTitle().compareTo(c2.getCourseTitle());
-                    } else {
-                        return 1;
-                    }
-                }).map(course::getCourseTitle).distinct().limit(topK).toList();
+                if (c1.getTotalCourseHours() - c2.getTotalCourseHours() > 0) {
+                    return -1;
+                } else if (c1.getTotalCourseHours() == c2.getTotalCourseHours()) {
+                    return c1.getCourseTitle().compareTo(c2.getCourseTitle());
+                } else {
+                    return 1;
+                }
+            }).map(course::getCourseTitle).distinct().limit(topK).toList();
         } else {
             // descending
             return streamSupplier.get().sorted((c1, c2) -> {
@@ -180,6 +182,20 @@ public class OnlineCoursesAnalyzer {
                 Collectors.averagingDouble(course::getBachelorDegreeOrHigher)));
         Map<String, List<course>> courses = streamSupplier.get()
             .collect(Collectors.groupingBy(course::getCourseNumber));
+        // Get the latest courses
+        Map<String, course> latestCourses = new HashMap<>();
+        courses.forEach((s, lls) ->
+            latestCourses.put(s, lls.stream().max((c1, c2) -> {
+                if (c1.getLaunchDate().isBefore(c2.getLaunchDate())) {
+                    return -1;
+                } else if (c1.getLaunchDate().isEqual(c2.getLaunchDate())) {
+                    return 0;
+                } else {
+                    return 1;
+                }
+            }).get())
+        );
+        // get the courseNumber list
         List<String> courseNumber = streamSupplier.get().map(course::getCourseNumber).distinct()
             .toList();
         Map<String, Double> similarity = new HashMap<>();
@@ -190,33 +206,18 @@ public class OnlineCoursesAnalyzer {
                 isBachelorOrHigher * 100 - BachelorOrHigherPercents.get(num));
             similarity.put(num, similarityValue);
         });
-        List<Entry<String, Double>> l = similarity.entrySet().stream().sorted((e1, e2) ->
+        return similarity.entrySet().stream().sorted((e1, e2) ->
                 (e1.getValue() - e2.getValue() > 0) ? 1 :
-                    (e1.getValue() - e2.getValue() == 0) ? e1.getKey().compareTo(e2.getKey()) : -1)
-            .toList();
-        List<String> titles = new ArrayList<>();
-        l.forEach(e ->
-            titles.add(courses.get(e.getKey()).stream().max((c1, c2) -> {
-                if (c1.getLaunchDate().isBefore(c2.getLaunchDate())) {
-                    return -1;
-                } else if (c1.getLaunchDate().isEqual(c2.getLaunchDate())) {
-                    return 0;
-                } else {
-                    return 1;
-                }
-            }).get().getCourseTitle()) // we don't need to check isPresent() because it must exist
-        );
-        return titles.stream().distinct().limit(10).toList();
+                    (e1.getValue() - e2.getValue() == 0.0) ? latestCourses.get(e1.getKey())
+                        .getCourseTitle().compareTo(latestCourses.get(e2.getKey()).getCourseTitle())
+                        : -1)
+            .map(e -> latestCourses.get(e.getKey()).getCourseTitle()).distinct().limit(10).toList();
     }
 
 
     public static void main(String[] args) {
         OnlineCoursesAnalyzer oca = new OnlineCoursesAnalyzer("./resources/local.csv");
-        oca.getCourseListOfInstructor().forEach((s, l) -> {
-            System.out.print(s + " == ");
-            System.out.print(l);
-            System.out.println();
-        });
+        oca.recommendCourses(25, 1, 1).forEach(System.out::println);
 
 
     }
