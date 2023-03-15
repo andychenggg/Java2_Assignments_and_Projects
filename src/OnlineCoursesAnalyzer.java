@@ -20,12 +20,20 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * This is a class to read and integrate the data.
+ */
 public class OnlineCoursesAnalyzer {
 
-    private final List<course> courses = new ArrayList<>();
+    private final List<Course> courses = new ArrayList<>();
 
-    private final Supplier<Stream<course>> streamSupplier = courses::stream;
+    private final Supplier<Stream<Course>> streamSupplier = courses::stream;
 
+    /**
+     * Constructor retrieve the data from the datasetPath and use a List to store the data.
+     *
+     * @param datasetPath the path of the dataset
+     */
     public OnlineCoursesAnalyzer(String datasetPath) {
         try (BufferedReader bfr = new BufferedReader(
             new FileReader(datasetPath, StandardCharsets.UTF_8))) {
@@ -41,7 +49,7 @@ public class OnlineCoursesAnalyzer {
                         result[i] = result[i].substring(0, result[i].length() - 1);
                     }
                 }
-                courses.add(new course(result[0], result[1],
+                courses.add(new Course(result[0], result[1],
                     LocalDate.parse(result[2], DateTimeFormatter.ofPattern("MM/dd/yyyy")),
                     result[3], result[4], result[5], Integer.parseInt(result[6]),
                     Integer.parseInt(result[7]), Integer.parseInt(result[8]),
@@ -59,20 +67,32 @@ public class OnlineCoursesAnalyzer {
         }
     }
 
+    /**
+     * Get participants count by instructors.
+     *
+     * @return Map&lt;String, Integer&rt; a relationship between instructors
+     *          and participants of all his courses
+     */
     public Map<String, Integer> getPtcpCountByInst() {
 
         Map<String, Integer> rawMap = streamSupplier.get().collect(
-            Collectors.groupingBy(course::getInstitution,
-                Collectors.summingInt(course::getParticipants)));
+            Collectors.groupingBy(Course::getInstitution,
+                Collectors.summingInt(Course::getParticipants)));
         // use TreeMap to initiate a treeMap, which sorted by natural order
         return new TreeMap<>(rawMap);
     }
 
+    /**
+     * Get participants count by instructor and subjects.
+     *
+     * @return Map&lt;String, Integer&rt; a relationship between instructor-subject
+     *          and the corresponding participants
+     */
     public Map<String, Integer> getPtcpCountByInstAndSubject() {
         // distinct key is guaranteed here
         Map<String, Integer> rawMap = streamSupplier.get().collect(
             Collectors.groupingBy(c -> c.getInstitution() + "-" + c.getCourseSubject(),
-                Collectors.summingInt(course::getParticipants)));
+                Collectors.summingInt(Course::getParticipants)));
         Map<String, Integer> result = new TreeMap<>((s1, s2) -> (Objects.equals(rawMap.get(s1),
             rawMap.get(s2))) ? s2.compareTo(s1)
             : rawMap.get(s2) - rawMap.get(s1)); // descending order
@@ -80,11 +100,18 @@ public class OnlineCoursesAnalyzer {
         return result;
     }
 
+    /**
+     * Get courses list of instructors.
+     *
+     * @return Map&lt;String, List&lt;List&lt;String&rt;&rt;&rt; a relationship between instructor
+     *          and a List consist of a sublist of individually taught courses and
+     *          a sublist of Collaboratively taught courses
+     */
     public Map<String, List<List<String>>> getCourseListOfInstructor() {
-        Map<String, List<course>> instructor_course = streamSupplier.get()
-            .collect(Collectors.groupingBy(course::getInstructors));
+        Map<String, List<Course>> instructorCourse = streamSupplier.get()
+            .collect(Collectors.groupingBy(Course::getInstructors));
         Map<String, List<List<String>>> result = new HashMap<>();
-        instructor_course.forEach((s, l) -> {
+        instructorCourse.forEach((s, l) -> {
             // no ","
             if (!s.contains(",")) {
                 // key doesn't exist
@@ -95,12 +122,10 @@ public class OnlineCoursesAnalyzer {
                     result.put(s, lls);
                 }
                 // add the course title
-                for (course c : l) {
+                for (Course c : l) {
                     result.get(s).get(0).add(c.getCourseTitle());
                 }
-            }
-            // have ","
-            else {
+            } else { // have ","
                 String[] profs = s.split(", ");
                 for (String p : profs) {
                     // key doesn't exist
@@ -111,7 +136,7 @@ public class OnlineCoursesAnalyzer {
                         result.put(p, lls);
                     }
                     // add the course title
-                    for (course c : l) {
+                    for (Course c : l) {
                         result.get(p).get(1).add(c.getCourseTitle());
                     }
                 }
@@ -130,6 +155,14 @@ public class OnlineCoursesAnalyzer {
         return result;
     }
 
+    /**
+     * Get topK courses by a criteria.
+     *
+     * @param topK The number of the most top courses you want to select
+     * @param by The criteria you select, either hours or participants
+     *
+     * @return return a list of the courses name
+     */
     public List<String> getCourses(int topK, String by) {
         if (by.equals("hours")) {
             // descending
@@ -141,7 +174,7 @@ public class OnlineCoursesAnalyzer {
                 } else {
                     return 1;
                 }
-            }).map(course::getCourseTitle).distinct().limit(topK).toList();
+            }).map(Course::getCourseTitle).distinct().limit(topK).toList();
         } else {
             // descending
             return streamSupplier.get().sorted((c1, c2) -> {
@@ -152,10 +185,19 @@ public class OnlineCoursesAnalyzer {
                 } else {
                     return 1;
                 }
-            }).map(course::getCourseTitle).distinct().limit(topK).toList();
+            }).map(Course::getCourseTitle).distinct().limit(topK).toList();
         }
     }
 
+    /**
+     * Search courses by some restrictions.
+     *
+     * @param courseSubject the subject you're interested in, the search is case-insensitive
+     * @param percentAudited set a lower bound of the audited percent
+     * @param totalCourseHours set an upper bound of the total course hours
+     *
+     * @return a list contains the titles of the appropriate courses
+     */
     public List<String> searchCourses(String courseSubject, double percentAudited,
         double totalCourseHours) {
         return streamSupplier.get().filter(course -> Pattern
@@ -163,27 +205,36 @@ public class OnlineCoursesAnalyzer {
                 .matcher(course.getCourseSubject()).matches())
             .filter(c -> c.getAuditedPercent() >= percentAudited)
             .filter(c -> c.getTotalCourseHours() <= totalCourseHours)
-            .map(course::getCourseTitle)
+            .map(Course::getCourseTitle)
             .distinct()
             .sorted(Comparator.naturalOrder())
             .toList();
     }
 
+    /**
+     * Give a list of recommended courses according to the age, gender, and whether it's a bachelor.
+     *
+     * @param age the age of a person
+     * @param gender 1 for male, 0 for female
+     * @param isBachelorOrHigher 1 means "is bachelor", 0 means "is not a bachelor"
+     *
+     * @return return a list contains the titles of 10 most recommended courses
+     */
     public List<String> recommendCourses(int age, int gender, int isBachelorOrHigher) {
         // groupingBy course number
         Map<String, Double> medianAges = streamSupplier.get().collect(
-            Collectors.groupingBy(course::getCourseNumber,
-                Collectors.averagingDouble(course::getMedianAge)));
-        Map<String, Double> MalePercents = streamSupplier.get().collect(
-            Collectors.groupingBy(course::getCourseNumber,
-                Collectors.averagingDouble(course::getMalePercent)));
-        Map<String, Double> BachelorOrHigherPercents = streamSupplier.get().collect(
-            Collectors.groupingBy(course::getCourseNumber,
-                Collectors.averagingDouble(course::getBachelorDegreeOrHigher)));
-        Map<String, List<course>> courses = streamSupplier.get()
-            .collect(Collectors.groupingBy(course::getCourseNumber));
+            Collectors.groupingBy(Course::getCourseNumber,
+                Collectors.averagingDouble(Course::getMedianAge)));
+        Map<String, Double> malePercents = streamSupplier.get().collect(
+            Collectors.groupingBy(Course::getCourseNumber,
+                Collectors.averagingDouble(Course::getMalePercent)));
+        Map<String, Double> bachelorOrHigherPercents = streamSupplier.get().collect(
+            Collectors.groupingBy(Course::getCourseNumber,
+                Collectors.averagingDouble(Course::getBachelorDegreeOrHigher)));
+        Map<String, List<Course>> courses = streamSupplier.get()
+            .collect(Collectors.groupingBy(Course::getCourseNumber));
         // Get the latest courses
-        Map<String, course> latestCourses = new HashMap<>();
+        Map<String, Course> latestCourses = new HashMap<>();
         courses.forEach((s, lls) ->
             latestCourses.put(s, lls.stream().max((c1, c2) -> {
                 if (c1.getLaunchDate().isBefore(c2.getLaunchDate())) {
@@ -196,14 +247,14 @@ public class OnlineCoursesAnalyzer {
             }).get())
         );
         // get the courseNumber list
-        List<String> courseNumber = streamSupplier.get().map(course::getCourseNumber).distinct()
+        List<String> courseNumber = streamSupplier.get().map(Course::getCourseNumber).distinct()
             .toList();
         Map<String, Double> similarity = new HashMap<>();
         courseNumber.forEach(num -> {
             double similarityValue = (age - medianAges.get(num)) * (age - medianAges.get(num))
-                + (gender * 100 - MalePercents.get(num)) * (gender * 100 - MalePercents.get(num))
-                + (isBachelorOrHigher * 100 - BachelorOrHigherPercents.get(num)) * (
-                isBachelorOrHigher * 100 - BachelorOrHigherPercents.get(num));
+                + (gender * 100 - malePercents.get(num)) * (gender * 100 - malePercents.get(num))
+                + (isBachelorOrHigher * 100 - bachelorOrHigherPercents.get(num)) * (
+                isBachelorOrHigher * 100 - bachelorOrHigherPercents.get(num));
             similarity.put(num, similarityValue);
         });
         return similarity.entrySet().stream().sorted((e1, e2) ->
@@ -216,189 +267,186 @@ public class OnlineCoursesAnalyzer {
 
 
     public static void main(String[] args) {
-        OnlineCoursesAnalyzer oca = new OnlineCoursesAnalyzer("./resources/local.csv");
-        oca.recommendCourses(25, 1, 1).forEach(System.out::println);
-
 
     }
 }
 
-class course {
+class Course {
 
     // online course holders
-    private final String Institution;
+    private final String institution;
     // the unique id of each course
-    private final String CourseNumber;
+    private final String courseNumber;
     // the launch date of each course
-    private final LocalDate LaunchDate;
+    private final LocalDate launchDate;
     // the title of each course
-    private final String CourseTitle;
+    private final String courseTitle;
     // the instructors of each course
-    private final String Instructors;
+    private final String instructors;
     // the subject of each course
-    private final String CourseSubject;
+    private final String courseSubject;
     //the last time of each course
-    private final int Year;
+    private final int year;
     // with (1), without (0).
-    private final int HonorCodeCertificates;
+    private final int honorCodeCertificates;
     // the number of participants who have accessed the course
-    private final int Participants;
+    private final int participants;
     // the number of participants who have audited more than 50% of the course
-    private final int Audited;
+    private final int audited;
     // Total number of votes
-    private final int Certified;
+    private final int certified;
     // the percent of the audited
-    private final double AuditedPercent;
+    private final double auditedPercent;
     // the percent of the certified
-    private final double CertifiedPercent;
+    private final double certifiedPercent;
     // the percent of the certified with accessing the course more than 50%
-    private final double CertifiedOfPercent;
+    private final double certifiedOfPercent;
     // the percent of playing video
-    private final double PlayedVideoPercent;
+    private final double playedVideoPercent;
     // the percent of posting in forum
-    private final double PostedInForumPercent;
+    private final double postedInForumPercent;
     // the percent of grade higher than zero
-    private final double GradeHigherThanZeroPercent;
+    private final double gradeHigherThanZeroPercent;
     // total course hours(per 1000)
-    private final double TotalCourseHours;
+    private final double totalCourseHours;
     // median hours for certification
-    private final double MedianHoursForCertification;
+    private final double medianHoursForCertification;
     // median age of the participants
-    private final double MedianAge;
+    private final double medianAge;
     // the percent of the male
-    private final double MalePercent;
+    private final double malePercent;
     // the percent of the female
-    private final double FemalePercent;
+    private final double femalePercent;
     // the percent of bachelor's degree of higher
-    private final double BachelorDegreeOrHigher;
+    private final double bachelorDegreeOrHigher;
 
 
     // self-define field
     private final int count = 1;
 
-    public course(String Institution, String CourseNumber, LocalDate LaunchDate, String CourseTitle,
-        String Instructors, String CourseSubject, int Year, int HonorCodeCertificates,
-        int Participants, int Audited, int Certified, double AuditedPercent,
-        double CertifiedPercent,
-        double CertifiedOfPercent, double PlayedVideoPercent, double PostedInForumPercent,
-        double GradeHigherThanZeroPercent,
-        double TotalCourseHours, double MedianHoursForCertification, double MedianAge,
-        double MalePercent, double FemalePercent, double BachelorDegreeOrHigher) {
-        this.Institution = Institution;
-        this.CourseNumber = CourseNumber;
-        this.LaunchDate = LaunchDate;
-        this.CourseTitle = CourseTitle;
-        this.Instructors = Instructors;
-        this.CourseSubject = CourseSubject;
-        this.Year = Year;
-        this.HonorCodeCertificates = HonorCodeCertificates;
-        this.Participants = Participants;
-        this.Audited = Audited;
-        this.Certified = Certified;
-        this.AuditedPercent = AuditedPercent;
-        this.CertifiedPercent = CertifiedPercent;
-        this.CertifiedOfPercent = CertifiedOfPercent;
-        this.PlayedVideoPercent = PlayedVideoPercent;
-        this.PostedInForumPercent = PostedInForumPercent;
-        this.GradeHigherThanZeroPercent = GradeHigherThanZeroPercent;
-        this.TotalCourseHours = TotalCourseHours;
-        this.MedianHoursForCertification = MedianHoursForCertification;
-        this.MedianAge = MedianAge;
-        this.MalePercent = MalePercent;
-        this.FemalePercent = FemalePercent;
-        this.BachelorDegreeOrHigher = BachelorDegreeOrHigher;
+    public Course(String institution, String courseNumber, LocalDate launchDate, String courseTitle,
+        String instructors, String courseSubject, int year, int honorCodeCertificates,
+        int participants, int audited, int certified, double auditedPercent,
+        double certifiedPercent,
+        double certifiedOfPercent, double playedVideoPercent, double postedInForumPercent,
+        double gradeHigherThanZeroPercent,
+        double totalCourseHours, double medianHoursForCertification, double medianAge,
+        double malePercent, double femalePercent, double bachelorDegreeOrHigher) {
+        this.institution = institution;
+        this.courseNumber = courseNumber;
+        this.launchDate = launchDate;
+        this.courseTitle = courseTitle;
+        this.instructors = instructors;
+        this.courseSubject = courseSubject;
+        this.year = year;
+        this.honorCodeCertificates = honorCodeCertificates;
+        this.participants = participants;
+        this.audited = audited;
+        this.certified = certified;
+        this.auditedPercent = auditedPercent;
+        this.certifiedPercent = certifiedPercent;
+        this.certifiedOfPercent = certifiedOfPercent;
+        this.playedVideoPercent = playedVideoPercent;
+        this.postedInForumPercent = postedInForumPercent;
+        this.gradeHigherThanZeroPercent = gradeHigherThanZeroPercent;
+        this.totalCourseHours = totalCourseHours;
+        this.medianHoursForCertification = medianHoursForCertification;
+        this.medianAge = medianAge;
+        this.malePercent = malePercent;
+        this.femalePercent = femalePercent;
+        this.bachelorDegreeOrHigher = bachelorDegreeOrHigher;
     }
 
     public String getInstitution() {
-        return Institution;
+        return institution;
     }
 
     public String getCourseNumber() {
-        return CourseNumber;
+        return courseNumber;
     }
 
     public LocalDate getLaunchDate() {
-        return LaunchDate;
+        return launchDate;
     }
 
     public String getCourseTitle() {
-        return CourseTitle;
+        return courseTitle;
     }
 
     public String getInstructors() {
-        return Instructors;
+        return instructors;
     }
 
     public String getCourseSubject() {
-        return CourseSubject;
+        return courseSubject;
     }
 
     public int getYear() {
-        return Year;
+        return year;
     }
 
     public int getHonorCodeCertificates() {
-        return HonorCodeCertificates;
+        return honorCodeCertificates;
     }
 
     public int getParticipants() {
-        return Participants;
+        return participants;
     }
 
     public int getAudited() {
-        return Audited;
+        return audited;
     }
 
     public int getCertified() {
-        return Certified;
+        return certified;
     }
 
     public double getAuditedPercent() {
-        return AuditedPercent;
+        return auditedPercent;
     }
 
     public double getCertifiedPercent() {
-        return CertifiedPercent;
+        return certifiedPercent;
     }
 
     public double getCertifiedOfPercent() {
-        return CertifiedOfPercent;
+        return certifiedOfPercent;
     }
 
     public double getPlayedVideoPercent() {
-        return PlayedVideoPercent;
+        return playedVideoPercent;
     }
 
     public double getPostedInForumPercent() {
-        return PostedInForumPercent;
+        return postedInForumPercent;
     }
 
     public double getGradeHigherThanZeroPercent() {
-        return GradeHigherThanZeroPercent;
+        return gradeHigherThanZeroPercent;
     }
 
     public double getTotalCourseHours() {
-        return TotalCourseHours;
+        return totalCourseHours;
     }
 
     public double getMedianHoursForCertification() {
-        return MedianHoursForCertification;
+        return medianHoursForCertification;
     }
 
     public double getMedianAge() {
-        return MedianAge;
+        return medianAge;
     }
 
     public double getMalePercent() {
-        return MalePercent;
+        return malePercent;
     }
 
     public double getFemalePercent() {
-        return FemalePercent;
+        return femalePercent;
     }
 
     public double getBachelorDegreeOrHigher() {
-        return BachelorDegreeOrHigher;
+        return bachelorDegreeOrHigher;
     }
 
     public int getCount() {
