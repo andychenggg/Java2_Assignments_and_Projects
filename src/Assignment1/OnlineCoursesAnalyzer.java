@@ -1,4 +1,4 @@
-
+package Assignment1;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -11,9 +11,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Scanner;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;

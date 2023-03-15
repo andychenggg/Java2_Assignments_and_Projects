@@ -1,4 +1,4 @@
-package test;
+package Assignment1.test;
 
 import java.util.Objects;
 
